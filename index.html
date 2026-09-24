@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Simulador cartográfico de propagación de lahares desde el volcán de Fuego." />
+    <title>Visor de lahares · Volcán de Fuego</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2313273f'/%3E%3Cpath d='M8 50h48L38 21l-6 9-5-12z' fill='%23f2f0e9'/%3E%3Cpath d='M11 52c9-8 16-2 24-8 7-5 12-2 18-7' fill='none' stroke='%23ef5b3f' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <script type="module" src="https://js.arcgis.com/5.1/"></script>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #13273f;
+        --ink-soft: #536273;
+        --paper: #f7f8f5;
+        --panel: rgba(255, 255, 255, 0.96);
+        --line: #dbe1e5;
+        --accent: #ef5b3f;
+        --accent-dark: #c43e28;
+        --river: #19a6c9;
+        --warning: #f2b134;
+        --success: #147d64;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body { height: 100%; margin: 0; overflow: hidden; background: var(--paper); color: var(--ink); }
+
+      button, input { font: inherit; }
+
+      .app { display: grid; grid-template-columns: minmax(290px, 360px) 1fr; height: 100vh; height: 100dvh; min-height: 0; }
+
+      .panel {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        height: 100vh;
+        min-height: 0;
+        flex-direction: column;
+        padding: 24px 22px 18px;
+        border-right: 1px solid var(--line);
+        background: var(--panel);
+        box-shadow: 8px 0 26px rgba(19, 39, 63, 0.08);
+      }
+
+      .eyebrow { margin: 0 0 6px; color: var(--accent-dark); font-size: 0.78rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+      h1 { margin: 0; font-size: clamp(1.65rem, 3vw, 2.25rem); line-height: 1.02; letter-spacing: -0.04em; }
+      .intro { margin: 14px 0 18px; color: var(--ink-soft); font-size: 0.96rem; line-height: 1.48; }
+
+      .status {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        min-height: 62px;
+        padding: 13px 14px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fff;
+      }
+
+      .status-dot { width: 10px; height: 10px; margin-top: 5px; flex: 0 0 auto; border-radius: 50%; background: var(--warning); box-shadow: 0 0 0 4px rgba(242, 177, 52, 0.16); }
+      .status.ready .status-dot { background: var(--success); box-shadow: 0 0 0 4px rgba(20, 125, 100, 0.14); }
+      .status.error .status-dot { background: var(--accent); box-shadow: 0 0 0 4px rgba(239, 91, 63, 0.14); }
+      .status strong { display: block; margin-bottom: 2px; font-size: 0.92rem; }
+      .status span { color: var(--ink-soft); font-size: 0.84rem; line-height: 1.35; }
+
+      .metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 16px 0; }
+      .metric { padding: 12px; border-radius: 12px; background: var(--ink); color: #fff; }
+      .metric b { display: block; font-size: 1.55rem; line-height: 1; }
+      .metric span { display: block; margin-top: 6px; color: #cdd6df; font-size: 0.78rem; }
+
+      .control { margin: 4px 0 14px; }
+      .control label { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.84rem; font-weight: 700; }
+      .control output { color: var(--accent-dark); font-weight: 800; }
+      input[type="range"] { width: 100%; accent-color: var(--accent); }
+
+      .reset {
+        width: 100%;
+        min-height: 44px;
+        border: 0;
+        border-radius: 10px;
+        background: var(--accent);
+        color: #fff;
+        font-weight: 800;
+        cursor: pointer;
+      }
+      .reset:hover { background: var(--accent-dark); }
+      .reset:focus-visible { outline: 3px solid rgba(239, 91, 63, 0.35); outline-offset: 2px; }
+
+      .results { min-height: 0; margin-top: 18px; overflow: auto; }
+      .results h2 { margin: 0 0 9px; font-size: 0.95rem; }
+      .results-empty { margin: 0; color: var(--ink-soft); font-size: 0.86rem; line-height: 1.45; }
+      .city-list { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+      .city-list li { padding: 9px 10px; border-left: 3px solid var(--accent); border-radius: 4px 9px 9px 4px; background: #f3f5f5; font-size: 0.84rem; }
+      .city-list small { display: block; margin-top: 2px; color: var(--ink-soft); }
+      .city-list .arrival, .tube-stop .arrival { color: var(--accent-dark); font-weight: 800; }
+
+      .note { margin-top: auto; padding-top: 14px; color: #71808d; font-size: 0.72rem; line-height: 1.35; }
+      .visuals { display: grid; grid-template-rows: minmax(0, 2fr) minmax(210px, 1fr); min-width: 0; height: 100%; min-height: 0; }
+      .map-wrap { position: relative; min-width: 0; min-height: 0; }
+      arcgis-map { width: 100%; height: 100%; }
+
+      .legend {
+        position: absolute;
+        right: 18px;
+        bottom: 24px;
+        z-index: 1;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 13px;
+        padding: 10px 13px;
+        border: 1px solid rgba(219, 225, 229, 0.9);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 8px 24px rgba(19, 39, 63, 0.12);
+        font-size: 0.76rem;
+        font-weight: 700;
+      }
+      .legend span { display: inline-flex; gap: 6px; align-items: center; }
+      .swatch { width: 18px; height: 4px; border-radius: 9px; background: var(--river); }
+      .swatch.connection { background: var(--warning); }
+      .swatch.city { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+      .swatch.safe { background: var(--success); }
+
+      .tube-map { display: flex; min-height: 0; flex-direction: column; overflow: hidden; padding: 16px 24px 14px; border-top: 1px solid var(--line); background: #fff; }
+      .tube-heading { display: flex; justify-content: space-between; gap: 20px; align-items: end; }
+      .tube-heading h2 { margin: 0 0 5px; font-size: 1.25rem; letter-spacing: -0.02em; }
+      .tube-heading p { margin: 0; color: var(--ink-soft); font-size: 0.88rem; }
+      .tube-direction { display: flex; gap: 8px; align-items: center; color: var(--ink-soft); font-size: 0.78rem; font-weight: 750; white-space: nowrap; }
+      .tube-direction b { color: var(--river); font-size: 1.25rem; }
+      .tube-empty { margin: 14px 0 0; padding: 14px; border: 1px dashed #bcc8d0; border-radius: 12px; color: var(--ink-soft); font-size: 0.9rem; text-align: center; }
+      .tube-empty.safe-message { padding: 18px 20px; border: 2px solid rgba(20, 125, 100, 0.45); background: #eef8f4; color: #0f624f; text-align: left; }
+      .tube-empty.safe-message strong { display: block; font-size: 1.18rem; line-height: 1.25; }
+      .tube-empty.safe-message span { display: block; margin-top: 6px; font-size: 1rem; line-height: 1.45; }
+      .tube-scroll { min-height: 0; flex: 1; margin-top: 8px; padding: 30px 8px 6px; overflow-x: auto; overflow-y: hidden; scrollbar-color: #9eacb7 #edf0f2; }
+      .tube-track { position: relative; display: flex; width: max-content; min-width: 100%; padding: 0 22px; }
+      .tube-track::before { position: absolute; top: 10px; right: 22px; left: 22px; height: 8px; border-radius: 999px; background: var(--river); content: ""; }
+      .tube-stop { position: relative; width: 158px; flex: 0 0 158px; padding: 38px 10px 0; text-align: center; }
+      .tube-marker { position: absolute; top: 2px; left: 50%; width: 24px; height: 24px; transform: translateX(-50%); border: 5px solid #fff; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--river); }
+      .tube-stop.origin .tube-marker { background: var(--ink); }
+      .tube-stop strong { display: block; font-size: 0.82rem; line-height: 1.22; }
+      .tube-stop small { display: block; margin-top: 4px; color: var(--ink-soft); font-size: 0.72rem; line-height: 1.25; }
+
+      @media (max-width: 760px) {
+        html, body { height: auto; overflow: auto; }
+        .app { grid-template-columns: 1fr; height: auto; min-height: 100%; }
+        .panel { position: relative; height: auto; max-height: none; padding: 18px 16px 14px; border-right: 0; border-bottom: 1px solid var(--line); }
+        .intro { margin: 10px 0 13px; }
+        .metrics { margin: 12px 0; }
+        .results { max-height: 180px; }
+        .note { display: none; }
+        .visuals { display: block; height: auto; }
+        .map-wrap { height: 58vh; min-height: 58vh; }
+        .legend { right: 10px; bottom: 12px; gap: 8px; padding: 8px 10px; }
+        .tube-map { overflow: visible; padding: 24px 16px 30px; }
+        .tube-scroll { flex: none; }
+        .tube-heading { align-items: flex-start; flex-direction: column; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <aside class="panel" aria-label="Controles de la simulación">
+        <p class="eyebrow">Volcán de Fuego · Guatemala</p>
+        <h1>Propagación de lahares</h1>
+        <p class="intro">Selecciona cualquier tramo para comprobar si pertenece a la red procedente de Fuego y visualizar su posible propagación aguas abajo.</p>
+
+        <div id="status" class="status" role="status" aria-live="polite">
+          <i class="status-dot" aria-hidden="true"></i>
+          <div><strong>Cargando la red</strong><span>Preparando cauces, conexiones y poblados.</span></div>
+        </div>
+
+        <div class="metrics" aria-label="Resumen de la simulación">
+          <div class="metric"><b id="riverCount">0</b><span>tramos activados</span></div>
+          <div class="metric"><b id="cityCount">0</b><span>poblados afectados</span></div>
+        </div>
+
+        <div class="control">
+          <label for="speed">Velocidad estimada <output id="speedLabel">5 m/s</output></label>
+          <input id="speed" type="range" min="1" max="15" step="1" value="5" aria-label="Velocidad estimada del lahar en metros por segundo" />
+        </div>
+
+        <button id="reset" class="reset" type="button">Limpiar simulación</button>
+
+        <section class="results" aria-labelledby="citiesHeading">
+          <h2 id="citiesHeading">Poblados potencialmente afectados</h2>
+          <p id="emptyResults" class="results-empty">La lista aparecerá al seleccionar un cauce.</p>
+          <ul id="cityList" class="city-list"></ul>
+        </section>
+
+        <p class="note">Los tiempos son orientativos y suponen una velocidad constante por el cauce. No sustituyen la modelización técnica ni los canales oficiales de emergencia.</p>
+      </aside>
+
+      <div class="visuals">
+        <section class="map-wrap" aria-label="Mapa interactivo">
+          <arcgis-map id="map" item-id="c429aabbc9bb4a6d81acb80c49fc513c" popup-disabled>
+            <arcgis-zoom slot="top-left"></arcgis-zoom>
+            <arcgis-home slot="top-left"></arcgis-home>
+          </arcgis-map>
+          <div class="legend" aria-label="Leyenda de elementos activados">
+            <span><i class="swatch"></i>Cauce</span>
+            <span><i class="swatch connection"></i>Conexión</span>
+            <span><i class="swatch city"></i>Poblado</span>
+            <span><i class="swatch safe"></i>Fuera de la red</span>
+          </div>
+        </section>
+
+        <section class="tube-map" aria-labelledby="tubeHeading">
+          <div class="tube-heading">
+            <div><h2 id="tubeHeading">Esquema del recorrido</h2><p id="tubeSummary">Selecciona un cauce para generar el recorrido lineal.</p></div>
+            <div class="tube-direction"><span>Aguas arriba</span><b aria-hidden="true">→</b><span>Aguas abajo</span></div>
+          </div>
+          <p id="tubeEmpty" class="tube-empty">Los poblados afectados aparecerán como paradas a lo largo del cauce.</p>
+          <div id="tubeScroll" class="tube-scroll" hidden><div id="tubeTrack" class="tube-track"></div></div>
+        </section>
+      </div>
+    </main>
+
+    <script type="module">
+      const mapElement = document.querySelector("arcgis-map");
+      const statusElement = document.querySelector("#status");
+      const riverCount = document.querySelector("#riverCount");
+      const cityCount = document.querySelector("#cityCount");
+      const cityList = document.querySelector("#cityList");
+      const emptyResults = document.querySelector("#emptyResults");
+      const speed = document.querySelector("#speed");
+      const speedLabel = document.querySelector("#speedLabel");
+      const resetButton = document.querySelector("#reset");
+      const tubeSummary = document.querySelector("#tubeSummary");
+      const tubeEmpty = document.querySelector("#tubeEmpty");
+      const tubeScroll = document.querySelector("#tubeScroll");
+      const tubeTrack = document.querySelector("#tubeTrack");
+
+      let caucesLayer;
+      let conexionesLayer;
+      let pobladosLayer;
+      let riverOverlay;
+      let connectionOverlay;
+      let cityOverlay;
+      let Graphic;
+      let rivers = [];
+      let connections = [];
+      let cities = [];
+      let byStartNode = new Map();
+      let fallbackBySegment = new Map();
+      let riverById = new Map();
+      let currentStartFeature = null;
+      let currentSegmentDistances = new Map();
+      let currentCityIds = new Set();
+      let currentCityOrder = [];
+      let currentSegmentCount = 0;
+      let activeRun = 0;
+      let initialized = false;
+
+      const normalize = (value) => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const attr = (feature, name) => feature.attributes?.[name];
+      const isAffected = (value) => Number(value) === 1 || normalize(value) === "si" || normalize(value) === "yes";
+
+      function setStatus(kind, title, detail) {
+        statusElement.className = `status ${kind}`;
+        statusElement.querySelector("strong").textContent = title;
+        statusElement.querySelector("span").textContent = detail;
+      }
+
+      function speedText(value) {
+        return `${Number(value).toLocaleString("es-ES")} m/s`;
+      }
+
+      function animationDelay() {
+        return Math.max(80, 560 - Number(speed.value) * 32);
+      }
+
+      function formatArrival(seconds) {
+        if (!Number.isFinite(seconds)) return "Tiempo no disponible";
+        if (seconds < 60) return "Llegada estimada: < 1 min";
+        const minutes = Math.round(seconds / 60);
+        if (minutes < 60) return `Llegada estimada: ${minutes} min`;
+        const hours = Math.floor(minutes / 60);
+        const remainder = minutes % 60;
+        return `Llegada estimada: ${hours} h${remainder ? ` ${remainder} min` : ""}`;
+      }
+
+      function segmentLengthMeters(feature) {
+        const declared = Number(attr(feature, "longitud_m"));
+        if (Number.isFinite(declared) && declared > 0) return declared;
+        let total = 0;
+        for (const path of feature.geometry?.paths ?? []) {
+          for (let i = 1; i < path.length; i += 1) total += Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]);
+        }
+        return total;
+      }
+
+      function downstreamCandidates(feature) {
+        const exact = byStartNode.get(attr(feature, "nodo_fin")) ?? [];
+        return exact.length ? exact : (fallbackBySegment.get(attr(feature, "tramo_id")) ?? []);
+      }
+
+      function downstreamDistances(startFeature) {
+        const startId = attr(startFeature, "tramo_id");
+        const distances = new Map([[startId, 0]]);
+        const queue = [{ feature: startFeature, distance: 0 }];
+
+        while (queue.length) {
+          queue.sort((a, b) => a.distance - b.distance);
+          const current = queue.shift();
+          const currentId = attr(current.feature, "tramo_id");
+          if (current.distance !== distances.get(currentId)) continue;
+          const nextDistance = current.distance + segmentLengthMeters(current.feature);
+
+          for (const candidate of downstreamCandidates(current.feature)) {
+            const candidateId = attr(candidate, "tramo_id");
+            if (!candidateId || nextDistance >= (distances.get(candidateId) ?? Infinity)) continue;
+            distances.set(candidateId, nextDistance);
+            queue.push({ feature: candidate, distance: nextDistance });
+          }
+        }
+
+        return distances;
+      }
+
+      function nearestPositionAlong(feature, point) {
+        let best = { distance: Infinity, along: 0, total: 0 };
+        let accumulated = 0;
+        for (const path of feature.geometry?.paths ?? []) {
+          for (let i = 1; i < path.length; i += 1) {
+            const a = path[i - 1];
+            const b = path[i];
+            const dx = b[0] - a[0];
+            const dy = b[1] - a[1];
+            const length = Math.hypot(dx, dy);
+            if (!length) continue;
+            const t = Math.max(0, Math.min(1, ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / (length * length)));
+            const projectedX = a[0] + t * dx;
+            const projectedY = a[1] + t * dy;
+            const distance = Math.hypot(point[0] - projectedX, point[1] - projectedY);
+            if (distance < best.distance) best = { distance, along: accumulated + t * length, total: 0 };
+            accumulated += length;
+          }
+        }
+        best.total = accumulated;
+        return best;
+      }
+
+      function connectionPositionMeters(connection, river) {
+        const paths = connection.geometry?.paths ?? [];
+        const points = paths.flatMap((path) => path.length ? [path[0], path[path.length - 1]] : []);
+        if (!points.length) return segmentLengthMeters(river) / 2;
+        const nearest = points.map((point) => nearestPositionAlong(river, point)).sort((a, b) => a.distance - b.distance)[0];
+        const riverLength = segmentLengthMeters(river);
+        return nearest.total > 0 ? Math.min(riverLength, nearest.along * riverLength / nearest.total) : riverLength / 2;
+      }
+
+      function calculateArrivalTimes(segmentDistances) {
+        const arrivals = new Map();
+        const velocity = Number(speed.value);
+        for (const connection of connections) {
+          if (!isAffected(attr(connection, "afeccion"))) continue;
+          const segmentId = attr(connection, "tramo_id");
+          const baseDistance = segmentDistances.get(segmentId);
+          const river = riverById.get(segmentId);
+          if (baseDistance == null || !river) continue;
+          const seconds = (baseDistance + connectionPositionMeters(connection, river)) / velocity;
+          const cityId = attr(connection, "ciudad_id");
+          if (!arrivals.has(cityId) || seconds < arrivals.get(cityId)) arrivals.set(cityId, seconds);
+        }
+        return arrivals;
+      }
+
+      function clearSimulation(message = true) {
+        activeRun += 1;
+        riverOverlay?.removeAll();
+        connectionOverlay?.removeAll();
+        cityOverlay?.removeAll();
+        riverCount.textContent = "0";
+        cityCount.textContent = "0";
+        cityList.replaceChildren();
+        emptyResults.hidden = false;
+        tubeTrack.replaceChildren();
+        tubeScroll.hidden = true;
+        tubeEmpty.hidden = false;
+        tubeEmpty.classList.remove("safe-message");
+        tubeEmpty.textContent = "Los poblados afectados aparecerán como paradas a lo largo del cauce.";
+        tubeSummary.textContent = "Selecciona un cauce para generar el recorrido lineal.";
+        currentStartFeature = null;
+        currentSegmentDistances = new Map();
+        currentCityIds = new Set();
+        currentCityOrder = [];
+        currentSegmentCount = 0;
+        if (message) setStatus("ready", "Red preparada", "Selecciona cualquier tramo para comprobar su relación con el Volcán de Fuego.");
+      }
+
+      function downstreamLevels(startFeature) {
+        const levels = [];
+        const visited = new Set();
+        let frontier = [startFeature];
+
+        while (frontier.length) {
+          const level = [];
+          const next = [];
+
+          for (const feature of frontier) {
+            const id = attr(feature, "tramo_id");
+            if (!id || visited.has(id)) continue;
+            visited.add(id);
+            level.push(feature);
+            const endNode = attr(feature, "nodo_fin");
+            const exactConnections = byStartNode.get(endNode) ?? [];
+            const downstream = exactConnections.length ? exactConnections : (fallbackBySegment.get(id) ?? []);
+            for (const candidate of downstream) next.push(candidate);
+          }
+
+          if (level.length) levels.push(level);
+          frontier = next;
+        }
+
+        return levels;
+      }
+
+      function addRiver(feature) {
+        riverOverlay.add(new Graphic({
+          geometry: feature.geometry,
+          attributes: feature.attributes,
+          symbol: { type: "simple-line", color: [25, 166, 201, 0.98], width: 4.5, cap: "round", join: "round" }
+        }));
+      }
+
+      function showUnaffectedSegment(feature) {
+        clearSimulation(false);
+        riverOverlay.add(new Graphic({
+          geometry: feature.geometry,
+          attributes: feature.attributes,
+          symbol: { type: "simple-line", color: [20, 125, 100, 1], width: 5.5, cap: "round", join: "round" }
+        }));
+        const origin = String(attr(feature, "Procedenci") ?? "").trim();
+        const originText = origin ? `Este tramo figura con procedencia “${origin}”` : "Este tramo no figura como procedente del Volcán de Fuego";
+        setStatus("ready", "Zona no afectada en este escenario", `${originText} y, según la red analizada, no sería alcanzado por un lahar originado en Fuego.`);
+        tubeSummary.textContent = "Sin propagación desde el Volcán de Fuego";
+        tubeEmpty.classList.add("safe-message");
+        const safeTitle = document.createElement("strong");
+        const safeDetail = document.createElement("span");
+        safeTitle.textContent = "Zona no afectada por este escenario";
+        safeDetail.textContent = "El tramo seleccionado no pertenece a la red procedente del Volcán de Fuego. Según la red analizada, un lahar originado en Fuego no alcanzaría esta zona.";
+        tubeEmpty.replaceChildren(safeTitle, safeDetail);
+      }
+
+      function addConnection(feature) {
+        connectionOverlay.add(new Graphic({
+          geometry: feature.geometry,
+          attributes: feature.attributes,
+          symbol: { type: "simple-line", color: [242, 177, 52, 0.95], width: 2.6, style: "short-dot" }
+        }));
+      }
+
+      function addCity(feature) {
+        cityOverlay.add(new Graphic({
+          geometry: feature.geometry,
+          attributes: feature.attributes,
+          symbol: { type: "simple-marker", color: [239, 91, 63, 1], size: 11, outline: { color: [255, 255, 255, 1], width: 2 } }
+        }));
+      }
+
+      function renderCityList(cityIds, arrivals) {
+        const selected = cities
+          .filter((feature) => cityIds.has(attr(feature, "ciudad_id")))
+          .sort((a, b) => (arrivals.get(attr(a, "ciudad_id")) ?? Infinity) - (arrivals.get(attr(b, "ciudad_id")) ?? Infinity) || String(attr(a, "lugar_pobl") ?? "").localeCompare(String(attr(b, "lugar_pobl") ?? ""), "es"));
+
+        cityList.replaceChildren(...selected.map((feature) => {
+          const item = document.createElement("li");
+          const name = document.createElement("strong");
+          const municipality = document.createElement("small");
+          const arrival = document.createElement("small");
+          name.textContent = attr(feature, "lugar_pobl") || "Poblado sin nombre";
+          municipality.textContent = [attr(feature, "municipio"), attr(feature, "departamento")].filter(Boolean).join(" · ");
+          arrival.className = "arrival";
+          arrival.textContent = formatArrival(arrivals.get(attr(feature, "ciudad_id")));
+          item.append(name, municipality, arrival);
+          return item;
+        }));
+
+        emptyResults.hidden = selected.length > 0;
+        return selected.length;
+      }
+
+      function renderTubeMap(cityOrder, startFeature, segmentCount, arrivals) {
+        const selected = cityOrder.map((cityId) => cities.find((feature) => attr(feature, "ciudad_id") === cityId)).filter(Boolean).sort((a, b) => (arrivals.get(attr(a, "ciudad_id")) ?? Infinity) - (arrivals.get(attr(b, "ciudad_id")) ?? Infinity));
+        const stops = [];
+        const origin = document.createElement("div");
+        origin.className = "tube-stop origin";
+        const originMarker = document.createElement("i");
+        originMarker.className = "tube-marker";
+        originMarker.setAttribute("aria-hidden", "true");
+        const originName = document.createElement("strong");
+        const originDetail = document.createElement("small");
+        originName.textContent = attr(startFeature, "name") || "Inicio del recorrido";
+        originDetail.textContent = attr(startFeature, "tramo_id") || "Tramo seleccionado";
+        origin.append(originMarker, originName, originDetail);
+        stops.push(origin);
+
+        for (const feature of selected) {
+          const stop = document.createElement("div");
+          stop.className = "tube-stop";
+          const marker = document.createElement("i");
+          marker.className = "tube-marker";
+          marker.setAttribute("aria-hidden", "true");
+          const name = document.createElement("strong");
+          const detail = document.createElement("small");
+          const arrival = document.createElement("small");
+          name.textContent = attr(feature, "lugar_pobl") || "Poblado sin nombre";
+          detail.textContent = [attr(feature, "municipio"), attr(feature, "departamento")].filter(Boolean).join(" · ");
+          arrival.className = "arrival";
+          arrival.textContent = formatArrival(arrivals.get(attr(feature, "ciudad_id"))).replace("Llegada estimada: ", "≈ ");
+          stop.append(marker, name, detail, arrival);
+          stops.push(stop);
+        }
+
+        tubeTrack.replaceChildren(...stops);
+        tubeScroll.hidden = false;
+        tubeEmpty.hidden = true;
+        tubeSummary.textContent = `${segmentCount} tramos · ${selected.length} poblados · ${speedText(speed.value)}`;
+      }
+
+      function refreshResults() {
+        if (!currentStartFeature) return;
+        const arrivals = calculateArrivalTimes(currentSegmentDistances);
+        cityCount.textContent = String(renderCityList(currentCityIds, arrivals));
+        renderTubeMap(currentCityOrder, currentStartFeature, currentSegmentCount, arrivals);
+      }
+
+      async function animateTrace(startFeature) {
+        clearSimulation(false);
+        const run = activeRun;
+        const levels = downstreamLevels(startFeature);
+        const activatedSegments = new Set();
+        const activatedConnections = new Set();
+        const activatedCities = new Set();
+        const activatedCityOrder = [];
+        currentStartFeature = startFeature;
+        currentSegmentDistances = downstreamDistances(startFeature);
+        currentCityIds = activatedCities;
+        currentCityOrder = activatedCityOrder;
+        setStatus("ready", "Propagación en curso", `Tramo inicial: ${attr(startFeature, "tramo_id")}`);
+
+        for (const level of levels) {
+          if (run !== activeRun) return;
+          for (const river of level) {
+            const segmentId = attr(river, "tramo_id");
+            activatedSegments.add(segmentId);
+            addRiver(river);
+          }
+
+          for (const connection of connections) {
+            const connectionId = attr(connection, "conexion_id");
+            if (activatedConnections.has(connectionId)) continue;
+            if (!activatedSegments.has(attr(connection, "tramo_id")) || !isAffected(attr(connection, "afeccion"))) continue;
+            activatedConnections.add(connectionId);
+            const cityId = attr(connection, "ciudad_id");
+            if (!activatedCities.has(cityId)) {
+              activatedCities.add(cityId);
+              const city = cities.find((feature) => attr(feature, "ciudad_id") === cityId && isAffected(attr(feature, "afeccion")));
+              if (city) {
+                addCity(city);
+                activatedCityOrder.push(cityId);
+              }
+            }
+            addConnection(connection);
+          }
+
+          riverCount.textContent = String(activatedSegments.size);
+          currentSegmentCount = activatedSegments.size;
+          refreshResults();
+          await wait(animationDelay());
+        }
+
+        if (run !== activeRun) return;
+        const totalCities = renderCityList(activatedCities, calculateArrivalTimes(currentSegmentDistances));
+        cityCount.textContent = String(totalCities);
+        setStatus("ready", "Simulación completada", `${activatedSegments.size} tramos y ${totalCities} poblados potencialmente afectados.`);
+      }
+
+      speed.addEventListener("input", () => { speedLabel.value = speedText(speed.value); refreshResults(); });
+      resetButton.addEventListener("click", () => clearSimulation(true));
+
+      mapElement.addEventListener("arcgisViewReadyChange", async () => {
+        if (initialized) return;
+        initialized = true;
+        try {
+          const [GraphicsLayerModule, GraphicModule] = await $arcgis.import([
+            "@arcgis/core/layers/GraphicsLayer.js",
+            "@arcgis/core/Graphic.js"
+          ]);
+          Graphic = GraphicModule;
+
+          await mapElement.map.loadAll();
+          const layers = mapElement.map.allLayers.toArray();
+          caucesLayer = layers.find((layer) => normalize(layer.title).includes("cauce"));
+          conexionesLayer = layers.find((layer) => normalize(layer.title).includes("conexion"));
+          pobladosLayer = layers.find((layer) => normalize(layer.title).includes("poblado"));
+
+          if (!caucesLayer || !conexionesLayer || !pobladosLayer) throw new Error("No se encontraron las tres capas del mapa web.");
+
+          [riverOverlay, connectionOverlay, cityOverlay] = [
+            new GraphicsLayerModule({ title: "Cauces activados", listMode: "hide" }),
+            new GraphicsLayerModule({ title: "Conexiones activadas", listMode: "hide" }),
+            new GraphicsLayerModule({ title: "Poblados activados", listMode: "hide" })
+          ];
+          mapElement.map.addMany([riverOverlay, connectionOverlay, cityOverlay]);
+
+          const [riverSet, connectionSet, citySet] = await Promise.all([
+            caucesLayer.queryFeatures({ where: "1=1", outFields: ["tramo_id", "nodo_ini", "nodo_fin", "longitud_m", "Procedenci", "name"], returnGeometry: true }),
+            conexionesLayer.queryFeatures({ where: "1=1", outFields: ["conexion_id", "ciudad_id", "tramo_id", "lugar_pobl", "afeccion"], returnGeometry: true }),
+            pobladosLayer.queryFeatures({ where: "1=1", outFields: ["ciudad_id", "lugar_pobl", "municipio", "departamento", "afeccion"], returnGeometry: true })
+          ]);
+
+          rivers = riverSet.features;
+          connections = connectionSet.features;
+          cities = citySet.features;
+          byStartNode = new Map();
+          fallbackBySegment = new Map();
+          riverById = new Map(rivers.map((river) => [attr(river, "tramo_id"), river]));
+
+          for (const river of rivers) {
+            const node = attr(river, "nodo_ini");
+            if (!byStartNode.has(node)) byStartNode.set(node, []);
+            byStartNode.get(node).push(river);
+          }
+
+          const endpoints = rivers.map((river) => {
+            const paths = river.geometry?.paths ?? [];
+            const firstPath = paths[0] ?? [];
+            const lastPath = paths[paths.length - 1] ?? [];
+            return { river, start: firstPath[0], end: lastPath[lastPath.length - 1] };
+          }).filter((item) => item.start && item.end);
+
+          for (const current of endpoints) {
+            const segmentId = attr(current.river, "tramo_id");
+            const endNode = attr(current.river, "nodo_fin");
+            if ((byStartNode.get(endNode) ?? []).length) continue;
+
+            let nearestDistance = Infinity;
+            const candidates = [];
+            for (const candidate of endpoints) {
+              if (candidate.river === current.river) continue;
+              const distance = Math.hypot(current.end[0] - candidate.start[0], current.end[1] - candidate.start[1]);
+              if (distance < nearestDistance) nearestDistance = distance;
+              candidates.push({ river: candidate.river, distance });
+            }
+
+            if (nearestDistance <= 50) {
+              fallbackBySegment.set(segmentId, candidates.filter((candidate) => candidate.distance <= nearestDistance + 1).map((candidate) => candidate.river));
+            }
+          }
+
+          mapElement.addEventListener("arcgisViewPointerDown", async (event) => {
+            try {
+              const response = await mapElement.hitTest(event.detail, { include: caucesLayer });
+              const hit = response.results.find((result) => result.type === "graphic" && result.graphic);
+              if (!hit) return;
+              setStatus("ready", "Buscando el tramo", "Identificando el cauce seleccionado…");
+              const objectId = hit.graphic.getObjectId?.() ?? attr(hit.graphic, caucesLayer.objectIdField);
+              if (objectId == null) throw new Error("No se pudo leer el identificador interno del cauce.");
+              const selectedSet = await caucesLayer.queryFeatures({
+                objectIds: [objectId],
+                outFields: ["tramo_id", "nodo_ini", "nodo_fin", "longitud_m", "Procedenci", "name"],
+                returnGeometry: true
+              });
+              const feature = selectedSet.features[0];
+              if (!feature) throw new Error("No se pudo recuperar el tramo seleccionado.");
+              const tramoId = attr(feature, "tramo_id");
+              if (!tramoId) throw new Error("El tramo recuperado no contiene tramo_id.");
+              if (!normalize(attr(feature, "Procedenci")).includes("fuego")) {
+                showUnaffectedSegment(feature);
+                return;
+              }
+              animateTrace(feature);
+            } catch (error) {
+              console.error(error);
+              setStatus("error", "No se pudo seleccionar el tramo", error.message || "Prueba a pulsar de nuevo sobre el cauce.");
+            }
+          });
+
+          setStatus("ready", "Red preparada", "Selecciona cualquier tramo para comprobar su relación con el Volcán de Fuego.");
+        } catch (error) {
+          console.error(error);
+          setStatus("error", "No se pudo preparar el visor", error.message || "Revisa la disponibilidad del mapa y sus capas.");
+        }
+      });
+    </script>
+  </body>
+</html>
