@@ -119,10 +119,27 @@
         font-weight: 700;
       }
       .legend span { display: inline-flex; gap: 6px; align-items: center; }
-      .swatch { width: 18px; height: 4px; border-radius: 9px; background: var(--river); }
-      .swatch.connection { background: var(--warning); }
-      .swatch.city { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
-      .swatch.safe { background: var(--success); }
+      .swatch.connection {
+  background: var(--warning);
+}
+
+.swatch.city {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid #b86f6f;
+  border-radius: 1px;
+  background: #f1dada;
+}
+
+.swatch.route {
+  height: 6px;
+  background: var(--river);
+}
+
+.swatch.safe {
+  height: 5px;
+  background: var(--success);
+}
 
       .tube-map { display: flex; min-height: 0; flex-direction: column; overflow: hidden; padding: 16px 24px 14px; border-top: 1px solid var(--line); background: #fff; }
       .tube-heading { display: flex; justify-content: space-between; gap: 20px; align-items: end; }
@@ -199,12 +216,14 @@
             <arcgis-zoom slot="top-left"></arcgis-zoom>
             <arcgis-home slot="top-left"></arcgis-home>
           </arcgis-map>
-          <div class="legend" aria-label="Leyenda de elementos activados">
-            <span><i class="swatch"></i>Cauce</span>
-            <span><i class="swatch connection"></i>Conexión</span>
-            <span><i class="swatch city"></i>Poblado</span>
-            <span><i class="swatch safe"></i>Fuera de la red</span>
-          </div>
+        <div class="legend" aria-label="Leyenda del mapa y de la simulación">
+  <span><i class="swatch fuego"></i>Cauce procedente de Fuego</span>
+  <span><i class="swatch other-river"></i>Otros cauces</span>
+  <span><i class="swatch connection"></i>Conexión</span>
+  <span><i class="swatch city"></i>Poblado</span>
+  <span><i class="swatch route"></i>Recorrido simulado</span>
+  <span><i class="swatch safe"></i>Tramo fuera de la red</span>
+</div>
         </section>
 
         <section class="tube-map" aria-labelledby="tubeHeading">
