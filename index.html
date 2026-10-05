@@ -118,13 +118,38 @@
         font-size: 0.76rem;
         font-weight: 700;
       }
-      .legend span { display: inline-flex; gap: 6px; align-items: center; }
-      .swatch.connection {
+    .legend span {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.swatch {
+  display: inline-block;
+  width: 18px;
+  min-width: 18px;
+  height: 4px;
+  flex: 0 0 auto;
+  border-radius: 9px;
+  background: var(--river);
+}
+
+.swatch.fuego {
+  height: 5px;
+  background: #1689d8;
+}
+
+.swatch.other-river {
+  background: #78b9ff;
+}
+
+.swatch.connection {
   background: var(--warning);
 }
 
 .swatch.city {
   width: 10px;
+  min-width: 10px;
   height: 10px;
   border: 1.5px solid #b86f6f;
   border-radius: 1px;
